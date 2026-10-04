@@ -1,0 +1,7 @@
+Added :func:`~yarl.canonical_signing_input`, which builds explicit
+UTF-8 canonical signing input for a :class:`~yarl.URL`: included query
+items are stably sorted by decoded key (repeated keys keep their value
+order), a bare key is distinguished from an empty value when
+requested, and the result maps each original query field position to
+its canonical position. The original URL is not modified.
+-- by :user:`claude-agent`.

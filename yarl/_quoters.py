@@ -11,6 +11,9 @@ PATH_REQUOTER = _Quoter(safe="@:", protected=":/@!$&'()*+,;=")
 QUERY_QUOTER = _Quoter(safe="?/:@", protected="=+&;", qs=True, requote=False)
 QUERY_REQUOTER = _Quoter(safe="?/:@", protected="=+&;", qs=True)
 QUERY_PART_QUOTER = _Quoter(safe="?/:@", qs=True, requote=False)
+# Same scope as QUERY_PART_QUOTER but decodes and re-encodes existing
+# percent escapes, used when a decoded query key/value is rendered.
+QUERY_PART_REQUOTER = _Quoter(safe="?/:@", qs=True)
 FRAGMENT_QUOTER = _Quoter(safe="?/:@", requote=False)
 FRAGMENT_REQUOTER = _Quoter(safe="?/:@")
 

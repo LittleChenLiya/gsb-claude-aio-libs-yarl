@@ -177,6 +177,43 @@ The :class:`~yarl.URL` could be used as a field type in pydantic_ models seamles
        url: URL
 
 
+Canonical signing input
+-----------------------
+
+Signatures over URLs (HMAC schemes, canonical query strings) need an
+explicit byte representation. :func:`~yarl.canonical_signing_input`
+returns the canonical bytes plus a mapping of each original query
+field to its canonical position. Query items are sorted stably by
+decoded key, repeated keys keep their value order, and the original
+URL is never modified::
+
+   >>> from yarl import URL, canonical_signing_input
+   >>> result = canonical_signing_input(
+   ...     URL("http://example.com/?b=2&a=1&a=3")
+   ... )
+   >>> result.canonical_query
+   'a=1&a=3&b=2'
+   >>> result.canonical_bytes
+   b'http://example.com/?a=1&a=3&b=2'
+   >>> result.index_map
+   {1: 0, 2: 1, 0: 2}
+
+Spaces serialize as ``+``, literal plus signs as ``%2B`` and Unicode as
+UTF-8 percent escapes; only the keys passed to *include* take part::
+
+   >>> result = canonical_signing_input(
+   ...     URL("http://example.com/?sig=abc&b=2&k=a+b%2Bc",
+   ...         encoded=True),
+   ...     include=("b", "k"),
+   ... )
+   >>> result.canonical_bytes
+   b'http://example.com/?b=2&k=a+b%2Bc'
+
+Run the related tests locally with::
+
+   python -m pytest tests/test_signing.py -q
+
+
 Source code
 -----------
 

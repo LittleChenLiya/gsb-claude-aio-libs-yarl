@@ -1669,6 +1669,146 @@ Query parsing
    .. versionadded:: 1.25
 
 
+Canonical signing input
+-----------------------
+
+.. function:: canonical_signing_input(url, *, include=None, distinguish_blank_values=True, encoding="utf-8")
+
+   Build an explicit canonical representation of *url* for request
+   signatures, for example an HMAC over a canonical query string.
+
+   The query is parsed into decoded items without going through a plain
+   :class:`dict`, so repeated keys survive with their value order. The
+   caller selects the participating keys with *include*, and the
+   selected items are stably sorted by their **decoded** key. Equal
+   decoded keys, including percent-encoding equivalents such as ``a``
+   and ``%61``, keep their original occurrence order. Scheme, authority
+   and path are taken from the canonical form already stored on the
+   :class:`~yarl.URL`; the URL is never modified.
+
+   :param url: the :class:`~yarl.URL` to canonicalize.
+
+   :param include: which decoded query keys take part. ``None`` (the
+                   default) includes every key; an iterable of strings
+                   includes the listed keys (a repeated key is included
+                   once per occurrence); a callable is called with each
+                   decoded key and includes the item when it returns a
+                   true value. A single :class:`str` is rejected with
+                   :exc:`TypeError` because iterating it would select
+                   characters rather than a key.
+
+   :param bool distinguish_blank_values: when true (the default), a bare
+                   key (``a``) is rendered without ``=`` and stays
+                   distinct from an empty-valued key (``a=``). When
+                   false both render as ``a=`` and compare equal.
+
+   :param str encoding: the encoding used to percent-decode the original
+                   query. Canonical output is always UTF-8.
+
+   :return: a :class:`CanonicalSigningInput`.
+
+   The signing input byte format is::
+
+      <scheme>://<raw-authority><raw-path>?<canonical-query>
+
+   encoded as UTF-8. A scheme-relative URL omits ``<scheme>:`` and a
+   relative URL omits ``//<raw-authority>``. The ``?`` appears only when
+   at least one included query item remains. In the canonical query a
+   space is ``+``, a literal plus is ``%2B`` and non-ASCII text is an
+   uppercase UTF-8 percent escape.
+
+   .. doctest::
+
+      >>> from yarl import canonical_signing_input
+      >>> result = canonical_signing_input(
+      ...     URL("http://example.com/?b=2&a=1&a=3")
+      ... )
+      >>> result.canonical_query
+      'a=1&a=3&b=2'
+      >>> result.canonical_bytes
+      b'http://example.com/?a=1&a=3&b=2'
+      >>> # original field position -> canonical position
+      >>> result.index_map
+      {1: 0, 2: 1, 0: 2}
+
+   Spaces, literal plus signs and Unicode::
+
+      >>> result = canonical_signing_input(
+      ...     URL("http://example.com/?k=a+b%2Bc&u=%C3%A9", encoded=True)
+      ... )
+      >>> result.canonical_query
+      'k=a+b%2Bc&u=%C3%A9'
+
+   Choosing the keys that take part::
+
+      >>> result = canonical_signing_input(
+      ...     URL("http://example.com/?sig=abc&b=2&a=1"),
+      ...     include=("a", "b"),
+      ... )
+      >>> result.canonical_query
+      'a=1&b=2'
+
+   A bare key and an empty value are distinct by default::
+
+      >>> result = canonical_signing_input(URL("http://example.com/?a&a="))
+      >>> result.canonical_query
+      'a&a='
+
+   .. versionadded:: 1.25
+
+.. class:: CanonicalSigningInput
+
+   The result of :func:`canonical_signing_input`.
+
+   .. attribute:: canonical_query
+
+      The canonical query string: included items sorted stably by
+      decoded key and joined with ``&``.
+
+   .. attribute:: query_items
+
+      A :class:`tuple` of :class:`CanonicalQueryItem` in canonical
+      order.
+
+   .. attribute:: index_map
+
+      A mapping from the original zero-based query field position to
+      the zero-based position within :attr:`query_items`. Only
+      included items appear as keys; excluded fields simply have no
+      entry.
+
+   .. attribute:: canonical_text
+
+      The full signing input as text.
+
+   .. attribute:: canonical_bytes
+
+      The full signing input as UTF-8 :class:`bytes`; this is the
+      value to hash or sign.
+
+.. class:: CanonicalQueryItem
+
+   One included query item in its canonical position.
+
+   .. attribute:: key
+
+      The decoded key.
+
+   .. attribute:: value
+
+      The decoded value; empty for a bare key.
+
+   .. attribute:: has_equals
+
+      Whether the original field carried an ``=`` separator.
+
+   .. attribute:: source_index
+
+      The zero-based position of the item among the original query
+      fields, including excluded and empty fields.
+
+   .. versionadded:: 1.25
+
 Cache control
 -------------
 

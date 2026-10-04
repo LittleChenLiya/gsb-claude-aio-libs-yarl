@@ -6,10 +6,13 @@ Codecov
 Cython
 Deprecations
 GPG
+HMAC
 IPv
+OAuth
 PRs
 PYX
 Pydantic
+SigV4
 Towncrier
 Twitter
 UTF
@@ -25,6 +28,9 @@ bidi
 boolean
 booleans
 bools
+canonical
+canonicalize
+canonicalized
 changelog
 changelogs
 codspeed
@@ -41,6 +47,7 @@ frontend
 glibc
 google
 hardcoded
+hmac
 hostless
 hostnames
 ignorable
@@ -50,6 +57,7 @@ manylinux
 multi
 musllinux
 nightlies
+oauth
 pre
 prebuilt
 pydantic
@@ -67,6 +75,7 @@ riscv64
 runtimes
 sdist
 serializer
+sigv4
 subclass
 subclasses
 subcomponent
