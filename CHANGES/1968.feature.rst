@@ -1,0 +1,10 @@
+Added :func:`yarl.canonicalize_for_signature`, an explicit entry point
+for URL signature canonicalization. It produces a deterministic canonical
+byte string (the signature input) and a mapping from the original query
+items to the canonical items, so different clients can verify that the
+same items were signed in the same order. Query items are stably sorted
+by decoded key (duplicate keys keep their value order), the caller
+explicitly selects which keys participate, and empty values and bare
+keys are distinguished on request. The scheme, host, path and
+percent-encoding follow yarl's conventions; the original URL is never
+modified.

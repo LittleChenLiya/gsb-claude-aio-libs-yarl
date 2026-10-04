@@ -1669,6 +1669,207 @@ Query parsing
    .. versionadded:: 1.25
 
 
+URL signing
+-----------
+
+When two clients need to sign the same URL and compare their signatures,
+they must agree on exactly which bytes are signed. The
+:func:`canonicalize_for_signature` entry point produces a deterministic
+byte string (the *signature input*) together with a mapping from the
+original query items to the canonical ones, so that either side can
+verify that the same items were signed in the same order.
+
+The canonical form reuses yarl's normal URL parsing and normalization:
+the scheme, host, path and percent-encoding follow yarl's conventions,
+while the query string is rebuilt from a caller-selected set of decoded
+items. The original URL is never modified.
+
+.. function:: canonicalize_for_signature(url, *, keys=None, distinguish_empty=False)
+
+   Canonicalize *url* for request signing.
+
+   The query is rebuilt from the decoded query items whose key is in
+   *keys* (all items participate when *keys* is ``None``). Items are
+   stably sorted by decoded key: Python's sort is stable, so duplicate
+   keys keep their original relative order (the order of their values
+   does not change).
+
+   Empty values (``a=``) and bare keys (``a``) are normalized to the
+   yarl convention ``a=`` unless *distinguish_empty* is ``True``, in
+   which case bare keys stay bare (``a``).
+
+   :param url: the URL to canonicalize; either a :class:`URL` or a
+               :class:`str`.
+   :param keys: the decoded keys of the query items that participate in
+                the signature, or ``None`` for all items.
+   :param bool distinguish_empty: when ``True``, bare keys (``a``) and
+                empty values (``a=``) are kept distinct; otherwise both
+                normalize to ``a=``.
+   :return: a :class:`SignatureCanonicalization`.
+
+   .. versionadded:: 1.26
+
+.. class:: SignatureCanonicalization
+
+   The result of canonicalizing a URL for signing. It has the following
+   attributes:
+
+   .. attribute:: url
+
+      The canonical :class:`URL` (a new object; the original URL is
+      never modified).
+
+   .. attribute:: data
+
+      The canonical byte string that is the signature input. It is the
+      UTF-8 encoding of the canonical URL as yarl renders it:
+      ``scheme://netloc/path?query`` (with the fragment, if present,
+      preserved as yarl renders it).
+
+   .. attribute:: query
+
+      The canonical query string, without the leading ``?``.
+
+   .. attribute:: items
+
+      All original query items as a tuple of :class:`QueryItem`, decoded
+      and in original order.
+
+   .. attribute:: canonical_items
+
+      The query items that participate in the signature as a tuple of
+      :class:`QueryItem`, decoded and stably sorted by key.
+
+   .. attribute:: mapping
+
+      A tuple of ``(original_index, canonical_index)`` pairs, one for
+      each participating original item in original order. The indices
+      point into :attr:`items` and :attr:`canonical_items` respectively;
+      the pair records where each original item ends up in the canonical
+      query.
+
+.. class:: QueryItem(key, value, has_equals)
+
+   A single decoded query item. *key* and *value* are decoded strings;
+   *has_equals* is ``True`` when the item carried an ``=`` separator
+   (``a=1``) and ``False`` for a bare key (``a``).
+
+Byte format of the signature input
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:attr:`SignatureCanonicalization.data` is the UTF-8 encoding of the
+canonical URL. The bytes are produced as follows:
+
+* The scheme, host and path are the normalized components of the
+  original URL as yarl renders them (scheme and host lowercased, default
+  port dropped, IDNA host encoded, path normalized).
+* The query is the canonical query string: selected items, stably
+  sorted by decoded key, re-encoded with yarl's query part quoter.
+* The fragment, if present, is preserved as yarl renders it.
+
+Query items are re-encoded with the same quoter yarl uses for query
+parts, so the following rules apply:
+
+* A space is encoded as ``+`` (form-urlencoded style).
+* A literal ``+`` in a key or value is percent-encoded as ``%2B``.
+* Non-ASCII characters are percent-encoded UTF-8 bytes (for example
+  ``ö`` becomes ``%C3%B6``).
+* Query delimiters that appear in a key or value are percent-encoded
+  (``&`` becomes ``%26``, ``=`` becomes ``%3D``).
+* A bare key (``a``) is rendered as ``a`` and an empty value (``a=``)
+  as ``a=`` when *distinguish_empty* is ``True``; otherwise both render
+  as ``a=``.
+
+Copyable examples
+~~~~~~~~~~~~~~~~~
+
+.. doctest::
+
+   >>> from yarl import URL, canonicalize_for_signature
+
+   Basic sorting: the canonical query is sorted by decoded key and the
+   mapping records where each original item ends up.
+
+   >>> res = canonicalize_for_signature(URL("http://example.com/?b=2&a=1&a=3"))
+   >>> res.query
+   'a=1&a=3&b=2'
+   >>> res.mapping
+   ((0, 2), (1, 0), (2, 1))
+   >>> res.data
+   b'http://example.com/?a=1&a=3&b=2'
+
+   Duplicate keys keep their original value order.
+
+   >>> res = canonicalize_for_signature(URL("http://h/?z=9&a=1&a=2&a=3"))
+   >>> res.query
+   'a=1&a=2&a=3&z=9'
+
+   Only the selected keys participate.
+
+   >>> res = canonicalize_for_signature(
+   ...     URL("http://h/?b=2&a=1&a=3"), keys=["a"]
+   ... )
+   >>> res.query
+   'a=1&a=3'
+   >>> res.mapping
+   ((1, 0), (2, 1))
+
+   Bare keys and empty values are distinguished on request.
+
+   >>> canonicalize_for_signature(URL("http://h/?a"), distinguish_empty=True).query
+   'a'
+   >>> canonicalize_for_signature(URL("http://h/?a="), distinguish_empty=True).query
+   'a='
+   >>> canonicalize_for_signature(URL("http://h/?a")).query
+   'a='
+
+   Percent-encoded keys are decoded before sorting, so ``%61`` and
+   ``a`` are the same key and stay in original order.
+
+   >>> res = canonicalize_for_signature(URL("http://h/?%61=1&a=2&b=3"))
+   >>> res.query
+   'a=1&a=2&b=3'
+
+   ``+`` means a space; a literal ``+`` is ``%2B``.
+
+   >>> canonicalize_for_signature(URL("http://h/?a=hello+world&b=%2B")).query
+   'a=hello+world&b=%2B'
+
+   Unicode is percent-encoded UTF-8.
+
+   >>> canonicalize_for_signature(URL("http://h/?c=%C3%B6&a=%C3%A9")).query
+   'a=%C3%A9&c=%C3%B6'
+
+   An empty key is kept.
+
+   >>> canonicalize_for_signature(URL("http://h/?=v&a=1")).query
+   '=v&a=1'
+
+   The original URL is never modified.
+
+   >>> original = URL("http://example.com/?b=2&a=1")
+   >>> _ = canonicalize_for_signature(original)
+   >>> str(original)
+   'http://example.com/?b=2&a=1'
+
+Running the tests locally
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The signing tests live in :file:`tests/test_signing.py`. Run them with
+pytest; the repository's default options enable coverage and xdist, so
+pass an empty ``addopts`` to run just this file quickly:
+
+.. code-block:: console
+
+   $ python -m pytest tests/test_signing.py -q -o addopts=""
+
+The module doctests (including the examples above) run with:
+
+.. code-block:: console
+
+   $ python -m pytest --doctest-modules yarl/_signing.py docs/api.rst -q -o addopts=""
+
+
 Cache control
 -------------
 
