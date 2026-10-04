@@ -1,0 +1,6 @@
+Added ``yarl.relative_reference()``, an explicit relative reference
+generator: given a base URL and a target URL it returns the shortest
+legal reference that ``URL.join()`` resolves back to the target, with
+path, query and fragment changes handled separately, encoded slashes
+kept inside their segment, and an explicit absolute reference for
+cross-origin targets.
