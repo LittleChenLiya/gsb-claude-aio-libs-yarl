@@ -1669,6 +1669,101 @@ Query parsing
    .. versionadded:: 1.25
 
 
+Raw query editing
+-----------------
+
+.. function:: plan_query_edit(text, key, value, *, occurrence=0)
+
+   Plan the replacement of a single query value directly in the
+   *original* text of a URL, without re-quoting or normalizing anything
+   else.
+
+   The item is selected by its *decoded* key (``+`` and percent-escapes
+   are decoded for the comparison) and by *occurrence*, its 0-based
+   order of appearance among the items with the same decoded key, so
+   duplicate keys are edited individually instead of being collapsed
+   into a mapping.  The new *value* is encoded with the regular yarl
+   query encoding rules.  Unselected percent-escapes keep their exact
+   spelling (including case), empty items and bare keys are preserved,
+   and the fragment keeps its raw bytes.
+
+   The returned :class:`QueryEditPlan` is bound to *text*: applying it
+   to a changed baseline raises :exc:`ValueError` and modifies nothing.
+   The plan is ``None`` -- nothing is planned or modified -- when the
+   text has no query, the query is empty, the decoded key does not
+   occur often enough, or the query contains an invalid
+   percent-escape.
+
+   An empty query (``http://h/?``) is distinguished from no query
+   (``http://h/``) by :func:`parse_raw_query`.  A bare key (``?a``) has
+   no value to replace, so the edit inserts ``=<value>`` right after
+   it, while an empty value (``?a=``) is replaced in place.
+
+   :param str text: the original text of the URL.
+   :param str key: the decoded query key to look for.
+   :param value: the new value; encoded with the yarl query rules.
+   :param int occurrence: which occurrence of *key* to edit, counted
+                          from 0 in order of appearance.
+
+   .. doctest::
+
+      >>> from yarl import plan_query_edit
+      >>> plan = plan_query_edit("http://h/?a=%2f&a=2#frag", "a", 3, occurrence=1)
+      >>> plan.range_map()
+      {'a[1]': (18, 19)}
+      >>> plan.apply()
+      'http://h/?a=%2f&a=3#frag'
+
+   .. versionadded:: 1.26
+
+.. class:: QueryEditPlan
+
+   An explicit query edit plan, bound to the original text it was made
+   from.  Returned by :func:`plan_query_edit`.
+
+   .. attribute:: original
+
+      The original text the plan is bound to.
+
+   .. attribute:: edits
+
+      A tuple of :class:`QueryEdit` replacements.
+
+   .. method:: range_map()
+
+      Return a :class:`dict` mapping ``"<decoded key>[<occurrence>]"``
+      to the ``(start, end)`` range of each edit.  All offsets are
+      counted in the original bytes of the bound text.
+
+   .. method:: apply(text=None)
+
+      Apply the planned edits and return the modified text.  When
+      *text* is given it must equal :attr:`original`; a changed
+      baseline raises :exc:`ValueError` and nothing is modified.
+
+.. class:: QueryEdit
+
+   One replacement within the original text of a URL, with ``key``,
+   ``occurrence``, ``start``, ``end`` and the already-encoded
+   ``replacement``.  ``start``/``end`` are offsets in the original
+   text; ``span`` is the ``(start, end)`` pair.
+
+.. function:: parse_raw_query(text)
+
+   Locate the query and fragment components in the raw text of a URL
+   without decoding or normalizing anything.  Returns a :class:`RawQuery`
+   whose ``span`` is ``None`` when there is no query and a possibly
+   empty ``(start, end)`` pair when a ``?`` is present.
+
+   .. versionadded:: 1.26
+
+.. class:: RawQuery
+
+   The location of the query (``span``) and fragment
+   (``fragment_span``) components in the original text;
+   ``has_query`` tells an empty query apart from no query.
+
+
 Cache control
 -------------
 

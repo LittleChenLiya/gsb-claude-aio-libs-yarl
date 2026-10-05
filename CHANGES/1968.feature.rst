@@ -1,0 +1,6 @@
+Added ``yarl.plan_query_edit()`` and ``yarl.parse_raw_query()``: explicit
+edit plans that replace one query value -- selected by decoded key and
+occurrence -- directly in the original text of a URL, preserving
+unselected percent-escape spelling, empty items, bare keys and the raw
+fragment bytes, and refusing to modify a changed baseline or a query
+with invalid escapes.
