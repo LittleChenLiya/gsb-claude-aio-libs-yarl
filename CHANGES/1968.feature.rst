@@ -1,0 +1,7 @@
+Added :func:`yarl.relative_ref`, an explicit relative reference
+generator: given a base and a target URL, it picks the shortest
+legal reference whose :meth:`~yarl.URL.join` with the base restores
+the target. Path, query and fragment changes are handled separately,
+every candidate is verified with :meth:`~yarl.URL.join`, percent-encoded
+delimiters such as ``%2F`` stay in their segment, and a cross-origin
+target is returned as an absolute reference -- by :user:`contributor`.

@@ -1,6 +1,6 @@
 from ._parse import query_to_pairs
 from ._query import Query, QueryVariable, SimpleQuery
-from ._url import URL, Mode, cache_clear, cache_configure, cache_info
+from ._url import URL, Mode, cache_clear, cache_configure, cache_info, relative_ref
 
 __version__ = "1.25.2.dev0"
 
@@ -14,4 +14,5 @@ __all__ = (
     "cache_configure",
     "cache_info",
     "query_to_pairs",
+    "relative_ref",
 )

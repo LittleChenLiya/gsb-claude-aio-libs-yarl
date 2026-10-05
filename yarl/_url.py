@@ -898,6 +898,148 @@ def from_parts_uncached(
 from_parts = lru_cache(from_parts_uncached)
 
 
+def _relative_path(base_path: str, target_path: str, base_has_authority: bool) -> str:
+    """Return a relative reference path that resolves to *target_path*.
+
+    Both paths are raw, percent-encoded paths. The returned path never
+    starts with ``/``: :meth:`URL.join` resolves it against the base
+    directory, so a percent-encoded delimiter such as ``%2F`` stays a
+    single segment and is never split into a path separator.
+    """
+    if target_path == base_path:
+        return ""
+    if base_path:
+        base_dir = base_path[: base_path.rfind("/") + 1] if "/" in base_path else ""
+    else:
+        base_dir = "/" if base_has_authority else ""
+    if target_path.endswith("/"):
+        # The target is a directory: its path is the directory itself.
+        target_dir = target_path
+        target_name = ""
+    else:
+        # The target is a file: split the directory from its name.
+        target_dir = target_path[: target_path.rfind("/") + 1] if "/" in target_path else ""
+        target_name = target_path[target_path.rfind("/") + 1 :] if "/" in target_path else target_path
+    base_segs = base_dir.rstrip("/").split("/") if base_dir else [""]
+    target_segs = target_dir.rstrip("/").split("/") if target_dir else [""]
+    common = 0
+    while (
+        common < len(base_segs)
+        and common < len(target_segs)
+        and base_segs[common] == target_segs[common]
+    ):
+        common += 1
+    up = len(base_segs) - common
+    down = target_segs[common:]
+    if target_name:
+        down = down + [target_name]
+    rel = "../" * up + "/".join(down)
+    if target_path.endswith("/") and rel and not rel.endswith("/"):
+        rel += "/"
+    if not rel and target_path.endswith("/"):
+        # The target is the base directory itself (or an ancestor that
+        # resolves to it); "./" keeps the trailing slash.
+        rel = "./"
+    return rel
+
+
+def relative_ref(base: "URL", target: "URL") -> "URL":
+    """Return the shortest legal relative reference that restores *target*.
+
+    Given a *base* URL and a *target* URL, pick the most concise
+    reference whose :meth:`URL.join` with *base* equals *target*. Path,
+    query and fragment changes are considered separately, and every
+    candidate is verified with :meth:`URL.join` before it is returned.
+
+    A relative reference can only change the path, query and fragment.
+    When *target* has a different scheme, host or port (a different
+    origin), no relative reference can restore it, so the absolute
+    *target* itself is returned instead.
+
+    No network access is performed.
+
+    >>> base = URL("http://example.com/a/b/c.html")
+    >>> str(relative_ref(base, base.with_name("d.html")))
+    'd.html'
+    >>> str(relative_ref(base, base.with_query("q=1")))
+    '?q=1'
+    """
+    if type(base) is not URL:
+        raise TypeError("base should be URL, got {!r}".format(type(base)))
+    if type(target) is not URL:
+        raise TypeError("target should be URL, got {!r}".format(type(target)))
+    mode = base._mode
+    if target._mode is not mode:
+        # Compare and join in the base URL's compatibility mode.
+        target = URL(target, mode=mode)
+
+    target_has_authority = bool(target._netloc)
+    base_has_authority = bool(base._netloc)
+
+    # Cross-origin: a relative reference cannot change scheme, host or
+    # port, so the absolute target is the only reference that restores it.
+    if target_has_authority and base_has_authority:
+        if target.origin() != base.origin():
+            return target
+
+    def _join_ok(ref: "URL") -> bool:
+        try:
+            return base.join(ref) == target
+        except ValueError:
+            return False
+
+    def _ref(
+        path: str,
+        netloc: str = "",
+        scheme: str = "",
+        query: str = target._query,
+        fragment: str = target._fragment,
+        empty: int = target._empty & (EMPTY_QUERY | EMPTY_FRAGMENT),
+    ) -> "URL":
+        return from_parts(scheme, netloc, path, query, fragment, mode, empty)
+
+    # Candidates in order of specificity; the shortest one that join()
+    # verifies wins, with ties broken by the earlier (more specific) form.
+    candidates: list[URL] = []
+    # Empty reference: restores the target when only the fragment is
+    # missing (join drops the fragment of an empty reference).
+    candidates.append(_ref("", empty=0))
+    # Fragment only: the query is inherited from the base.
+    candidates.append(_ref("", query="", empty=target._empty & EMPTY_FRAGMENT))
+    # Query and fragment: the path and authority are inherited.
+    candidates.append(_ref(""))
+    # Relative path: resolved against the base directory.
+    rel_path = _relative_path(base._path, target._path, base_has_authority)
+    candidates.append(_ref(rel_path))
+    # Absolute path: same origin, root-relative.
+    abs_path = target._path or "/"
+    candidates.append(_ref(abs_path))
+    # Network-path reference: same origin, different authority (e.g. a
+    # different userinfo).
+    if target_has_authority and target._netloc != base._netloc:
+        candidates.append(_ref(abs_path, netloc=target._netloc, empty=target._empty))
+    # Absolute reference: the identity. It restores the target when the
+    # target is absolute; a relative target with an absolute base cannot
+    # be restored by any reference, since join() always keeps the base's
+    # authority, so fall back to the target itself below.
+    candidates.append(target)
+
+    best: URL | None = None
+    best_len = -1
+    for ref in candidates:
+        if _join_ok(ref):
+            ref_len = len(str(ref))
+            if best is None or ref_len < best_len:
+                best = ref
+                best_len = ref_len
+    if best is not None:
+        return best
+    # No candidate restores the target (e.g. a relative target against an
+    # absolute base, which join() always turns absolute). The target itself
+    # is the closest legal reference.
+    return target
+
+
 @rewrite_module
 class URL:
     # Don't derive from str
@@ -1499,6 +1641,16 @@ class URL:
         return from_parts(
             "", "", self._path, self._query, self._fragment, self._mode, self._empty
         )
+
+    def relative_ref(self, target: "URL") -> "URL":
+        """Return the shortest relative reference that restores *target*.
+
+        This is the reference of *target* relative to *self*: the most
+        concise reference whose :meth:`join` with *self* equals *target*.
+        See :func:`yarl.relative_ref` for the full rules.
+
+        """
+        return relative_ref(self, target)
 
     @cached_property
     def absolute(self) -> bool:
