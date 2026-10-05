@@ -1353,6 +1353,61 @@ section generates a new :class:`URL` instance.
 
    .. versionadded:: 1.10.0
 
+Raw query editing plans
+------------------------
+
+.. class:: RawQueryEditPlan(url)
+
+   An immutable plan for editing a URL's raw query string.
+
+   The plan captures the original (encoded) query string of the URL it
+   is created from and records value replacements addressed by decoded
+   key and occurrence index. Call :meth:`set` to add replacements, then
+   :meth:`apply` (or :meth:`apply_to`) to produce a new URL.
+
+   The plan is bound to the original query text. If the target URL's
+   query no longer matches the captured baseline, or the query contains
+   illegal percent-escapes, applying the plan raises :exc:`ValueError`
+   and no modification is made.
+
+   .. doctest::
+
+      >>> url = URL('http://example.com/?a=%2f&a=2#frag', encoded=True)
+      >>> plan = RawQueryEditPlan(url).set('a', '3', occurrence=1)
+      >>> new_url, ranges = plan.apply()
+      >>> str(new_url)
+      'http://example.com/?a=%2f&a=3#frag'
+      >>> ranges
+      {('a', 1): (8, 9)}
+
+   .. method:: set(key, value, *, occurrence=0)
+
+      Return a new plan with an additional value replacement.
+
+      Addresses the *occurrence*-th pair whose decoded key is *key*
+      (0-based). The new *value* is encoded with YARL's query part
+      quoter. Raises :exc:`ValueError` if *occurrence* is negative.
+      The existence of the addressed pair is checked when the plan is
+      applied.
+
+   .. method:: apply()
+
+      Apply the plan to the URL it was created from.
+
+      Returns a tuple of the new URL (with the edited query) and a
+      mapping from ``(decoded_key, occurrence)`` to the byte range
+      ``(start, end)`` in the *original* query that was replaced.
+
+   .. method:: apply_to(url)
+
+      Apply the plan to a different URL.
+
+      Like :meth:`apply`, but verifies that the URL's query matches the
+      captured baseline before applying. Raises :exc:`ValueError` if the
+      baseline has changed or the query contains illegal escapes.
+
+   .. versionadded:: 1.26.0
+
 .. method:: URL.with_fragment(fragment)
 
    Return a new URL with *fragment* replaced, auto-encode *fragment* if needed.

@@ -1,0 +1,8 @@
+Added :class:`~yarl.RawQueryEditPlan`, an explicit plan for editing a
+URL's raw query string. Values are replaced by decoded key and
+occurrence order, preserving unselected percent-encoding spelling,
+empty values, bare keys, and the fragment's raw bytes. The plan binds
+to the original query text and refuses to modify when the query contains
+illegal percent-escapes or the baseline has changed. Applying the plan
+returns a mapping from ``(decoded_key, occurrence)`` to the byte range
+in the original query that was replaced.
